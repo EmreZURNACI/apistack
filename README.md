@@ -52,6 +52,23 @@ cd apistack
 ```bash
 docker-compose up -d --build
 ```
+## Screenshots
+
+![Grafana](https://www.dropbox.com/scl/fi/t5zny9648905sori16mr6/Grafana.png?rlkey=6p8lxjnv97s7n35e83jcxc0kw&st=4p9sdoru&raw=1)
+
+![Tracing-2](https://www.dropbox.com/scl/fi/0d42ctcvtom7hctuxtfeh/Tracing-2.png?rlkey=i4q4ss0ep8no7ojnyj47bvfcb&st=u7fbpouw&raw=1)
+
+![Prometheus](https://www.dropbox.com/scl/fi/c7iseigegnncm8q2g8br9/Prometheus.png?rlkey=uzdtnvsokpdpnci215i8hqqjc&st=j8klh52s&raw=1)
+
+![Tracing](https://www.dropbox.com/scl/fi/k4hplwhwxl001dyegbfh7/Tracing.png?rlkey=76lqon154vvwfsixgfj8mcqgb&st=ft12p4wg&raw=1)
+
+
+
+
+
+
+
+
 ## API Reference
 
 
