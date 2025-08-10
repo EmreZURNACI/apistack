@@ -98,8 +98,6 @@ docker-compose up -d --build
 
 ### ⚠️ Limitations / Known Issues
 
-- ❌ **No ORM used**: All database queries are written manually using raw SQL.
-- ⚠️ **Error messages are basic**: API responses contain simple and generic error messages without detailed context.
 - 🔐 **No authentication or authorization is implemented.**
 - 🔁 **Only the `actor` table is implemented**; other entities in the `dvdrental` database are not yet supported.
 
