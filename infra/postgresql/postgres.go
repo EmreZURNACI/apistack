@@ -2,58 +2,39 @@ package postgresql
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"github.com/EmreZURNACI/apistack.git/domain"
 	_ "github.com/lib/pq"
-	"go.nhat.io/otelsql"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/plugin/opentelemetry/tracing"
 	"os"
-	"strconv"
-	"time"
 )
 
 type PostgresHandler struct {
-	Db     *sql.DB
+	Db     *gorm.DB
 	Tracer trace.Tracer
 }
 
 func GetPostgresHandler(tracer trace.Tracer) (*PostgresHandler, error) {
-
-	driverName, err := otelsql.Register("postgres",
-		otelsql.AllowRoot(),
-		otelsql.TraceQueryWithoutArgs(),
-		otelsql.TraceRowsClose(),
-		otelsql.TraceRowsAffected(),
-	)
-	if err != nil {
-		return nil, err
-	}
 
 	var dsn = fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s  sslmode=disable",
 		os.Getenv("HOST"), os.Getenv("PORT"),
 		os.Getenv("USER"), os.Getenv("PASSWORD"),
 		os.Getenv("DB"))
 
-	db, err := sql.Open(driverName, dsn)
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
-		zap.L().Error("Error connecting to postgres", zap.Error(err))
+		zap.L().Error("failed to connect to gorm postgres database")
 		return nil, err
+
 	}
 
-	db.SetConnMaxLifetime(time.Minute * 3)
-	db.SetConnMaxIdleTime(time.Minute * 3)
-	db.SetMaxIdleConns(10)
-	db.SetMaxOpenConns(10)
-
-	if err := db.Ping(); err != nil {
-		zap.L().Error("Error pinging postgres", zap.Error(err))
-		return nil, err
-	}
-
-	if err := otelsql.RecordStats(db); err != nil {
+	if err := db.Use(tracing.NewPlugin()); err != nil {
+		zap.L().Error("failed to tracing gorm postgres database")
 		return nil, err
 	}
 
@@ -64,156 +45,125 @@ func GetPostgresHandler(tracer trace.Tracer) (*PostgresHandler, error) {
 }
 
 func (h *PostgresHandler) GetActors(ctx context.Context, search string, offset, limit int, orderBy bool) ([]domain.Actor, error) {
-
-	ctx, span := h.Tracer.Start(ctx, "GetUsers")
+	ctx, span := h.Tracer.Start(ctx, "GetActors")
 	defer span.End()
 
-	var query = "SELECT * FROM public.actor"
+	db := h.Db.WithContext(ctx).Table("actor")
 
 	if search != "" {
-		query += " WHERE first_name ILIKE '%" + search + "%' OR last_name ILIKE '%" + search + "%'"
+		db = db.Where("first_name ILIKE ? OR last_name ILIKE ?", "%"+search+"%", "%"+search+"%")
 	}
 
 	if orderBy {
-		query += " ORDER BY actor_id DESC"
+		db = db.Order("actor_id DESC")
 	}
 
 	if offset > 0 {
-		query += " OFFSET " + strconv.Itoa(offset)
+		db = db.Offset(offset)
 	}
 
 	if limit > 0 {
-		query += " LIMIT " + strconv.Itoa(limit)
+		db = db.Limit(limit)
 	}
 
-	rows, err := h.Db.QueryContext(ctx, query)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			zap.L().Error("No record found", zap.Error(err))
-			return nil, errors.New("kayıt bulunamadı")
-		}
-		zap.L().Error("Error executing query", zap.Error(err))
-		return nil, errors.New("sorgu çalıştırılırken hata ile karşılaşıldı")
+	var actors []domain.Actor
+	if err := db.Find(&actors).Error; err != nil {
+		zap.L().Error("failed to query actors", zap.Error(err))
+		return nil, errors.New("aktörler getirilirken bir sorun oluştu")
 	}
 
-	defer func() {
-		if err := rows.Close(); err != nil {
-			zap.L().Error("Error closing rows", zap.Error(err))
-		}
-	}()
-
-	var (
-		actors []domain.Actor
-		actor  domain.Actor
-	)
-
-	for rows.Next() {
-		if err := rows.Scan(&actor.ActorID, &actor.FirstName, &actor.LastName, &actor.LastUpdate); err != nil {
-			zap.L().Error("Error scanning row", zap.Error(err))
-			return nil, errors.New("satır scan edilirken hata ile karşılaşıldı")
-		}
-		actors = append(actors, actor)
+	if len(actors) == 0 {
+		zap.L().Info("kayıtlı aktör bulunamadı")
+		return nil, errors.New("kayıtlı aktör bulunamadı")
 	}
 
 	return actors, nil
 }
 
 func (h *PostgresHandler) CreateActor(ctx context.Context, firstName, lastName string) (int64, error) {
-
 	ctx, span := h.Tracer.Start(ctx, "CreateActor")
 	defer span.End()
 
-	tx, err := h.Db.BeginTx(ctx, nil)
-
-	if err != nil {
-		zap.L().Error("Error starting transaction", zap.Error(err))
-		return -1, errors.New("error starting transaction")
-	}
-
-	var count int64
-	err = tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM public.actor WHERE first_name = $1 OR  last_name = $2", firstName, lastName).Scan(&count)
-	if err != nil {
-		zap.L().Error("Error executing query", zap.Error(err))
-		return -1, err
-	}
-
-	if count >= 1 {
-		zap.L().Error("Bu bilgilere ait kullanıcı bulunmakta", zap.Error(err))
-		return -1, errors.New("bu bilgilere ait kullanıcı bulunmakta")
-	}
-
-	var query = "INSERT INTO public.actor (first_name,last_name) VALUES ($1,$2)"
-
-	_, err = tx.ExecContext(ctx, query, firstName, lastName)
-	if err != nil {
-		zap.L().Error("Error executing query", zap.Error(err))
-		return -1, err
+	tx := h.Db.WithContext(ctx).Table("actor").Begin()
+	if tx.Error != nil {
+		zap.L().Error("failed to start transaction", zap.Error(tx.Error))
+		return 0, errors.New("transaction başlatılamadı")
 	}
 
 	defer func() {
-		if err != nil {
-			if err := tx.Rollback(); err != nil {
-				zap.L().Error("Error rolling back", zap.Error(err))
-				return
-			}
+		//recover == panic durumlarını yakalar
+		if r := recover(); r != nil {
+			tx.Rollback()
 		}
 	}()
 
-	if err := tx.Commit(); err != nil {
-		zap.L().Error("Error committing transaction", zap.Error(err))
+	var exist domain.Actor
+	err := tx.Where("first_name = ? AND last_name = ?", firstName, lastName).
+		First(&exist).Error
+
+	if err == nil {
+		tx.Rollback()
+		return -1, errors.New("bu bilgilere ait kullanıcı zaten mevcut")
+	}
+
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		tx.Rollback()
+		zap.L().Error("veritabanı sorgu hatası", zap.Error(err))
+		return -1, errors.New("sorgu hatası")
+	}
+
+	var count int64
+	tx.Select("actor_id").Order("actor_id DESC").Limit(1).Scan(&count)
+	actor := domain.Actor{ActorID: count + 1, FirstName: firstName, LastName: lastName}
+	if err := tx.Create(&actor).Error; err != nil {
+		tx.Rollback()
+		zap.L().Error("kayıt eklenirken hata oluştu", zap.Error(err))
+		return -1, errors.New("kayıt eklenirken hata oluştu")
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		zap.L().Error("transaction commit hatası", zap.Error(err))
 		return -1, err
 	}
 
-	var id int64
-	err = h.Db.QueryRowContext(ctx, "SELECT actor_id FROM public.actor WHERE first_name = $1 AND last_name = $2", firstName, lastName).Scan(&id)
-	if err != nil {
-		zap.L().Error("Error scanning row", zap.Error(err))
-		return -1, err
-	}
-
-	return id, nil
+	return actor.ActorID, nil
 }
 
 func (h *PostgresHandler) DeleteActor(ctx context.Context, id string) error {
-
 	ctx, span := h.Tracer.Start(ctx, "DeleteActor")
 	defer span.End()
 
-	tx, err := h.Db.BeginTx(ctx, nil)
-
-	if err != nil {
-		zap.L().Error("Error starting transaction", zap.Error(err))
-		return err
-	}
-
-	var count int64
-	err = tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM public.actor WHERE actor_id= $1", id).Scan(&count)
-	if err != nil {
-		zap.L().Error("Error executing query", zap.Error(err))
-		return err
-	}
-
-	if count <= 0 {
-		zap.L().Error("Bu id'ye ait kullanıcı bulunmamaktadır", zap.String("id", id))
-		return errors.New("bu id'ye ait kullanıcı bulunmamaktadır")
-	}
-
-	if _, err := tx.ExecContext(ctx, "DELETE FROM public.actor WHERE actor_id = $1", id); err != nil {
-		zap.L().Error("Error deleting actor", zap.Error(err))
-		return err
+	tx := h.Db.WithContext(ctx).Table("actor").Begin()
+	if tx.Error != nil {
+		zap.L().Error("transaction başlatılamadı", zap.Error(tx.Error))
+		return errors.New("transaction başlatılamadı")
 	}
 
 	defer func() {
-		if err != nil {
-			if err := tx.Rollback(); err != nil {
-				zap.L().Error("Error rolling back", zap.Error(err))
-				return
-			}
+		if r := recover(); r != nil {
+			tx.Rollback()
 		}
 	}()
 
-	if err := tx.Commit(); err != nil {
-		zap.L().Error("Error committing transaction", zap.Error(err))
+	var actor domain.Actor
+	if err := tx.Where("actor_id = ?", id).First(&actor).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			tx.Rollback()
+			return errors.New("bu id'ye ait kullanıcı bulunmamaktadır")
+		}
+		tx.Rollback()
+		zap.L().Error("actor sorgusunda hata", zap.Error(err))
+		return errors.New("ilgili id'li actor bulunurken hata oluştu")
+	}
+
+	if err := tx.Where("actor_id = ?", actor.ActorID).Delete(&actor).Error; err != nil {
+		tx.Rollback()
+		zap.L().Error("actor silinirken hata oluştu", zap.Error(err))
+		return errors.New("actor silme sorgusu çalıştırılırken hata oluştu")
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		zap.L().Error("transaction commit hatası", zap.Error(err))
 		return err
 	}
 
@@ -221,80 +171,70 @@ func (h *PostgresHandler) DeleteActor(ctx context.Context, id string) error {
 }
 
 func (h *PostgresHandler) GetActor(ctx context.Context, id string) (*domain.Actor, error) {
-
 	ctx, span := h.Tracer.Start(ctx, "GetActor")
 	defer span.End()
 
-	row := h.Db.QueryRowContext(ctx, "SELECT * FROM public.actor WHERE actor_id = $1", id)
-	if row.Err() != nil {
-		if errors.Is(row.Err(), sql.ErrNoRows) {
-			zap.L().Error("No record with this id", zap.Error(row.Err()))
-			return nil, row.Err()
-		}
-		zap.L().Error("Error querying row", zap.Error(row.Err()))
-		return nil, row.Err()
-	}
-
 	var actor domain.Actor
-	if err := row.Scan(&actor.ActorID, &actor.FirstName, &actor.LastName, &actor.LastUpdate); err != nil {
-		zap.L().Error("Error scanning row", zap.Error(err))
-		return nil, err
+	err := h.Db.WithContext(ctx).Table("actor").Where("actor_id = ?", id).First(&actor).Error
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		zap.L().Info("Bu id'li kullanıcı bulunmamaktadır", zap.String("id", id))
+		return nil, errors.New("bu id'li kullanıcı bulunmamaktadır")
+	}
+	if err != nil {
+		zap.L().Error("Sorgu çalıştırılırken hata oluştu", zap.Error(err))
+		return nil, errors.New("sorgu çalıştırılırken hata oluştu")
 	}
 
-	return &domain.Actor{
-		ActorID:    actor.ActorID,
-		FirstName:  actor.FirstName,
-		LastName:   actor.LastName,
-		LastUpdate: actor.LastUpdate,
-	}, nil
+	zap.L().Info("Veriler getirildi", zap.String("id", id))
+	return &actor, nil
 }
 
 func (h *PostgresHandler) UpdateActor(ctx context.Context, id, firstname, lastname string) error {
-
 	ctx, span := h.Tracer.Start(ctx, "UpdateActor")
 	defer span.End()
 
-	tx, err := h.Db.BeginTx(ctx, nil)
+	tx := h.Db.Table("actor").WithContext(ctx).Begin()
+	if tx.Error != nil {
+		zap.L().Error("transaction başlatılamadı", zap.Error(tx.Error))
+		return errors.New("transaction başlatılamadı")
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
 
-	if err != nil {
-		zap.L().Error("Error starting transaction", zap.Error(err))
+	var actor domain.Actor
+	if err := tx.Where("actor_id = ?", id).First(&actor).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			tx.Rollback()
+			return errors.New("bu id'ye ait kullanıcı bulunmamaktadır")
+		}
+		tx.Rollback()
+		zap.L().Error("actor sorgusu hatası", zap.Error(err))
+		return errors.New("actor sorgusu hatası")
+	}
+
+	if actor.FirstName == firstname && actor.LastName == lastname {
+		tx.Rollback()
+		return errors.New("bu bilgilere ait kullanıcı zaten mevcut")
+	}
+
+	actor.FirstName = firstname
+	actor.LastName = lastname
+
+	if err := tx.Where("actor_id = ?", actor.ActorID).Updates(&actor).Error; err != nil {
+		tx.Rollback()
+		zap.L().Error("güncelleme yapılamadı", zap.Error(err))
+		return errors.New("güncelleme yapılamadı")
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		zap.L().Error("transaction commit hatası", zap.Error(err))
 		return err
 	}
 
-	var count int64
-	err = tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM public.actor WHERE actor_id = $1", id).Scan(&count)
-	if err != nil {
-		zap.L().Error("Error executing query", zap.Error(err))
-		return err
-	}
-
-	if count <= 0 {
-		zap.L().Error("bu id'ye ait veri bulunmamaktadır")
-		return errors.New("bu id'ye ait veri bulunmamaktadır")
-	}
-
-	err = tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM public.actor WHERE first_name = $1 OR  last_name = $2", firstname, lastname).Scan(&count)
-	if err != nil {
-		zap.L().Error("Error executing query", zap.Error(err))
-		return err
-	}
-	if count >= 1 {
-		zap.L().Error("bu bilgilere ait kullanıcı bulunmakta")
-		return errors.New("bu bilgilere ait kullanıcı bulunmakta")
-	}
-
-	_, err = tx.ExecContext(ctx, "UPDATE public.actor SET first_name = $1, last_name = $2 WHERE actor_id = $3", firstname, lastname, id)
-	if err != nil {
-		zap.L().Error("Error updating actor", zap.Error(err))
-		return err
-	}
-
-	if err := tx.Commit(); err != nil {
-		zap.L().Error("Error committing transaction", zap.Error(err))
-		return err
-	}
-
-	zap.L().Info("Updated")
+	zap.L().Info("actor güncellendi", zap.String("id", id))
 	return nil
-
 }
