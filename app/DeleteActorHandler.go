@@ -9,6 +9,7 @@ type DeleteActorRequest struct {
 	ID string `json:"id"`
 }
 type DeleteActorResponse struct {
+	Message string `json:"message"`
 }
 
 type DeleteActorHandler struct {
@@ -32,6 +33,8 @@ func (h *DeleteActorHandler) Handle(ctx context.Context, req *DeleteActorRequest
 	if err != nil {
 		return &DeleteActorResponse{}, err
 	}
-	return &DeleteActorResponse{}, nil
+	return &DeleteActorResponse{
+		Message: "Aktör silindi",
+	}, nil
 
 }
