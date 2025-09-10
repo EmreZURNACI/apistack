@@ -2,12 +2,13 @@ package main
 
 import (
 	"context"
-	"github.com/EmreZURNACI/apistack.git/server"
+	"log"
+	"time"
+
+	"github.com/EmreZURNACI/apistack/server"
 	"github.com/joho/godotenv"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	"log"
-	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
