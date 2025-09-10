@@ -2,7 +2,8 @@ package app
 
 import (
 	"context"
-	"github.com/EmreZURNACI/apistack.git/domain"
+
+	"github.com/EmreZURNACI/apistack/domain"
 )
 
 type Repository interface {
