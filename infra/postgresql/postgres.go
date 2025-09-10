@@ -4,14 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/EmreZURNACI/apistack.git/domain"
+	"os"
+
+	"github.com/EmreZURNACI/apistack/domain"
 	_ "github.com/lib/pq"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/plugin/opentelemetry/tracing"
-	"os"
 )
 
 type PostgresHandler struct {
