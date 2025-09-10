@@ -9,6 +9,7 @@ WORKDIR /app
 
 COPY ./app ./app
 COPY ./domain ./domain
+COPY ./controller ./controller
 COPY ./infra ./infra
 COPY ./server ./server
 COPY ./.env ./.env
