@@ -5,11 +5,11 @@ import (
 	"log"
 	"time"
 
-	"github.com/EmreZURNACI/apistack/server"
-	"github.com/joho/godotenv"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
+	"github.com/EmreZURNACI/apistack/server"
+	"github.com/spf13/viper"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
@@ -20,15 +20,16 @@ import (
 )
 
 func init() {
-	err := godotenv.Load("./.env")
-	if err != nil {
-		log.Fatal("Error loading .env file")
-		return
+	viper.SetConfigName("config")    // name of config file (without extension)
+	viper.SetConfigType("yaml")      // REQUIRED if the config file does not have the extension in the name
+	viper.AddConfigPath("./.config") // path to look for the config file in
+	if err := viper.ReadInConfig(); err != nil {
+		log.Fatal("Config okunamadı")
 	}
 
-	config := zap.NewProductionConfig()                                         // or zap.NewDevelopmentConfig() or any other zap.Config
-	config.EncoderConfig.EncodeTime = zapcore.TimeEncoderOfLayout(time.RFC3339) // or time.RubyDate or "2006-01-02 15:04:05" or even freaking time.Kitchen
-	logger, err := config.Build()
+	log := zap.NewProductionConfig()                                         // or zap.NewDevelopmentConfig() or any other zap.Config
+	log.EncoderConfig.EncodeTime = zapcore.TimeEncoderOfLayout(time.RFC3339) // or time.RubyDate or "2006-01-02 15:04:05" or even freaking time.Kitchen
+	logger, _ := log.Build()
 	zap.ReplaceGlobals(logger)
 	defer logger.Sync()
 
@@ -36,6 +37,7 @@ func init() {
 }
 
 func main() {
+
 	// Alınan traceler fonksiyonşardan geçirilecek
 	tp := initTracer("stackapi")
 	defer func() {
@@ -81,3 +83,5 @@ func initTracer(service_name string) *sdktrace.TracerProvider {
 //fiber'dakicontextten gelen ctx'i userContext olarak almak gereklidir.
 
 // ! Create Actor commit veya rollback trace bozuyor ve spanler ayrı
+
+//PROJE AKIŞI ==> ROUTES(SERVER) ==> CONTROLLER ==> SERVICE ==> APP ==>INFRA/CACHE
