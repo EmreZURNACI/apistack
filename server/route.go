@@ -6,9 +6,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/EmreZURNACI/apistack/cache/redis"
 	"github.com/EmreZURNACI/apistack/controller/actor"
 	"github.com/EmreZURNACI/apistack/controller/healthcheck"
 	"github.com/EmreZURNACI/apistack/infra/postgresql"
+	"github.com/spf13/viper"
 
 	"github.com/gofiber/contrib/otelfiber/v2"
 	"github.com/gofiber/fiber/v2"
@@ -35,7 +37,13 @@ func Route() {
 		return
 	}
 
-	actorController := actor.NewActorController(handler)
+	cacher, err := redis.Connection()
+	if err != nil {
+		zap.L().Error("Error getting postgres handler", zap.Error(err))
+		return
+	}
+
+	actorController := actor.NewActorController(handler, cacher)
 	healthcheckController := healthcheck.NewHealthCheckController()
 
 	server.Use(otelfiber.Middleware())
@@ -50,8 +58,8 @@ func Route() {
 	v1.Put("/:id", actorController.UpdateActor)
 	v1.Delete("/:id", actorController.DeleteActor)
 
-	zap.L().Info("server started...", zap.String("port", os.Getenv("SERVER_PORT")))
-	if err := server.Listen(os.Getenv("SERVER_PORT")); err != nil {
+	zap.L().Info("server started...", zap.Int("port", viper.GetInt("server.port")))
+	if err := server.Listen(":" + viper.GetString("server.port")); err != nil {
 		zap.L().Fatal("server stopped", zap.Error(err))
 	}
 
