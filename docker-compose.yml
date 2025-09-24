@@ -33,6 +33,7 @@ services:
       - "8080:8080"
     depends_on:
       - postgres
+      - redis
     networks:
       - stackapi
   postgres:
@@ -40,15 +41,17 @@ services:
     container_name: postgres
     ports:
       - "5432:5432"
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_DB: dvdrental
-      POSTGRES_PASSWORD: 123
+    # environment:
+    #   POSTGRES_USER: postgres
+    #   POSTGRES_DB: dvdrental
+    #   POSTGRES_PASSWORD: 123
+    env_file:
+      - prod.env
     networks:
       - stackapi
     volumes:
-      - C:\Users\emrez\Desktop\Microservis\backup\dvdrental.tar:/backup/dvdrental.tar
-      - C:\Users\emrez\Desktop\Microservis\backup\restore.sh:/docker-entrypoint-initdb.d/restore.sh
+      - ./backup/dvdrental.tar:/backup/dvdrental.tar
+      - ./backup/restore.sh:/docker-entrypoint-initdb.d/restore.sh
   jaeger:
     image: jaegertracing/all-in-one:1.70.0
     container_name: jaeger
@@ -69,6 +72,18 @@ services:
       - "9411:9411"
     networks:
       - stackapi
+
+  redis:
+    image: redis
+    container_name: redis
+    ports: 
+      - "6379:6379"
+    command: /bin/sh -c "redis-server --requirepass $$REDIS_HOST_PASSWORD"
+    env_file:
+      - prod.env
+    networks:
+      - stackapi
+
 
 volumes:
   grafana-storage:
