@@ -100,6 +100,7 @@ docker-compose up -d --build
 
 - 🔐 **No authentication or authorization is implemented.**
 - 🔁 **Only the `actor` table is implemented**; other entities in the `dvdrental` database are not yet supported.
+- 🛠️ **Cache Synchronization Issue**
 
 ### ⚠️ Note
 
