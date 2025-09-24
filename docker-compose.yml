@@ -12,18 +12,24 @@ services:
       - server
     networks:
       - stackapi
+
+
+
   grafana:
     image: grafana/grafana-oss
     container_name: grafana
     ports:
       - "3000:3000"
-    depends_on:
-      - prometheus
     volumes:
       - ./deploy/grafana/provisioning/datasources/prometheus-datasource.yml:/etc/grafana/provisioning/datasources/prometheus-datasource.yml
       - grafana-storage:/var/lib/grafana
+    depends_on:
+      - prometheus
     networks:
       - stackapi
+
+
+
   server:
     build:
       context: .
@@ -36,6 +42,9 @@ services:
       - redis
     networks:
       - stackapi
+
+
+
   postgres:
     image: postgres
     container_name: postgres
@@ -45,9 +54,9 @@ services:
       - prod.env
     networks:
       - stackapi
-    volumes:
-      - .\backup\dvdrental.tar:/backup/dvdrental.tar
-      - .\backup\restore.sh:/docker-entrypoint-initdb.d/restore.sh
+
+
+
   jaeger:
     image: jaegertracing/all-in-one:1.70.0
     container_name: jaeger
@@ -69,6 +78,9 @@ services:
     networks:
       - stackapi
 
+
+
+
   redis:
     image: redis
     container_name: redis
@@ -79,6 +91,9 @@ services:
       - prod.env
     networks:
       - stackapi
+
+
+
 
 
 volumes:
