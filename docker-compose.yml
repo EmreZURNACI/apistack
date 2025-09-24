@@ -41,17 +41,13 @@ services:
     container_name: postgres
     ports:
       - "5432:5432"
-    # environment:
-    #   POSTGRES_USER: postgres
-    #   POSTGRES_DB: dvdrental
-    #   POSTGRES_PASSWORD: 123
     env_file:
       - prod.env
     networks:
       - stackapi
     volumes:
-      - ./backup/dvdrental.tar:/backup/dvdrental.tar
-      - ./backup/restore.sh:/docker-entrypoint-initdb.d/restore.sh
+      - .\backup\dvdrental.tar:/backup/dvdrental.tar
+      - .\backup\restore.sh:/docker-entrypoint-initdb.d/restore.sh
   jaeger:
     image: jaegertracing/all-in-one:1.70.0
     container_name: jaeger
