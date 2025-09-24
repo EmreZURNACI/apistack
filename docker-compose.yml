@@ -33,7 +33,6 @@ services:
       - "8080:8080"
     depends_on:
       - postgres
-      - redis
     networks:
       - stackapi
   postgres:
@@ -50,15 +49,6 @@ services:
     volumes:
       - C:\Users\emrez\Desktop\Microservis\backup\dvdrental.tar:/backup/dvdrental.tar
       - C:\Users\emrez\Desktop\Microservis\backup\restore.sh:/docker-entrypoint-initdb.d/restore.sh
-  redis:
-    image: redis
-    container_name: redis
-    ports: 
-      - "6379:6379"
-    command: redis-server --save 20 1 --loglevel warning --requirepass emredis
-    networks:
-      - stackapi
-    
   jaeger:
     image: jaegertracing/all-in-one:1.70.0
     container_name: jaeger
