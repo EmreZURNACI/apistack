@@ -55,6 +55,11 @@ func GetPostgresHandler(tracer trace.Tracer) (*PostgresHandler, error) {
 		return nil, err
 	}
 
+	if err := db.AutoMigrate(&domain.Actor{}); err != nil {
+		zap.L().Error("table oluşturulamadı")
+		return nil, err
+	}
+
 	return &PostgresHandler{
 		db:     db,
 		tracer: tracer,
@@ -65,14 +70,14 @@ func (h *PostgresHandler) GetActors(ctx context.Context, search string, offset, 
 	ctx, span := h.tracer.Start(ctx, "GetActors")
 	defer span.End()
 
-	db := h.db.WithContext(ctx).Table("actor")
+	db := h.db.WithContext(ctx).Model(&domain.Actor{})
 
 	if search != "" {
 		db = db.Where("first_name ILIKE ? OR last_name ILIKE ?", "%"+search+"%", "%"+search+"%")
 	}
 
 	if orderBy {
-		db = db.Order("actor_id DESC")
+		db = db.Order("id DESC")
 	}
 
 	if offset > 0 {
@@ -101,7 +106,7 @@ func (h *PostgresHandler) CreateActor(ctx context.Context, firstName, lastName s
 	ctx, span := h.tracer.Start(ctx, "CreateActor")
 	defer span.End()
 
-	tx := h.db.WithContext(ctx).Table("actor").Begin()
+	tx := h.db.WithContext(ctx).Model(&domain.Actor{}).Begin()
 	if tx.Error != nil {
 		zap.L().Error("failed to start transaction", zap.Error(tx.Error))
 		return 0, errors.New("transaction başlatılamadı")
@@ -130,8 +135,8 @@ func (h *PostgresHandler) CreateActor(ctx context.Context, firstName, lastName s
 	}
 
 	var count int64
-	tx.Select("actor_id").Order("actor_id DESC").Limit(1).Scan(&count)
-	actor := domain.Actor{ActorID: count + 1, FirstName: firstName, LastName: lastName}
+	tx.Select("id").Order("id DESC").Limit(1).Scan(&count)
+	actor := domain.Actor{ID: count + 1, FirstName: firstName, LastName: lastName}
 	if err := tx.Create(&actor).Error; err != nil {
 		tx.Rollback()
 		zap.L().Error("kayıt eklenirken hata oluştu", zap.Error(err))
@@ -143,14 +148,14 @@ func (h *PostgresHandler) CreateActor(ctx context.Context, firstName, lastName s
 		return -1, err
 	}
 
-	return actor.ActorID, nil
+	return actor.ID, nil
 }
 
 func (h *PostgresHandler) DeleteActor(ctx context.Context, id string) error {
 	ctx, span := h.tracer.Start(ctx, "DeleteActor")
 	defer span.End()
 
-	tx := h.db.WithContext(ctx).Table("actor").Begin()
+	tx := h.db.WithContext(ctx).Model(&domain.Actor{}).Begin()
 	if tx.Error != nil {
 		zap.L().Error("transaction başlatılamadı", zap.Error(tx.Error))
 		return errors.New("transaction başlatılamadı")
@@ -163,7 +168,7 @@ func (h *PostgresHandler) DeleteActor(ctx context.Context, id string) error {
 	}()
 
 	var actor domain.Actor
-	if err := tx.Where("actor_id = ?", id).First(&actor).Error; err != nil {
+	if err := tx.Where("id = ?", id).First(&actor).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			tx.Rollback()
 			return errors.New("bu id'ye ait kullanıcı bulunmamaktadır")
@@ -173,7 +178,7 @@ func (h *PostgresHandler) DeleteActor(ctx context.Context, id string) error {
 		return errors.New("ilgili id'li actor bulunurken hata oluştu")
 	}
 
-	if err := tx.Where("actor_id = ?", actor.ActorID).Delete(&actor).Error; err != nil {
+	if err := tx.Where("id = ?", actor.ID).Delete(&actor).Error; err != nil {
 		tx.Rollback()
 		zap.L().Error("actor silinirken hata oluştu", zap.Error(err))
 		return errors.New("actor silme sorgusu çalıştırılırken hata oluştu")
@@ -192,7 +197,7 @@ func (h *PostgresHandler) GetActor(ctx context.Context, id string) (*domain.Acto
 	defer span.End()
 
 	var actor domain.Actor
-	err := h.db.WithContext(ctx).Table("actor").Where("actor_id = ?", id).First(&actor).Error
+	err := h.db.WithContext(ctx).Model(&domain.Actor{}).Where("id = ?", id).First(&actor).Error
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		zap.L().Info("Bu id'li kullanıcı bulunmamaktadır", zap.String("id", id))
@@ -211,7 +216,7 @@ func (h *PostgresHandler) UpdateActor(ctx context.Context, id, firstname, lastna
 	ctx, span := h.tracer.Start(ctx, "UpdateActor")
 	defer span.End()
 
-	tx := h.db.Table("actor").WithContext(ctx).Begin()
+	tx := h.db.Model(&domain.Actor{}).WithContext(ctx).Begin()
 	if tx.Error != nil {
 		zap.L().Error("transaction başlatılamadı", zap.Error(tx.Error))
 		return errors.New("transaction başlatılamadı")
@@ -223,7 +228,7 @@ func (h *PostgresHandler) UpdateActor(ctx context.Context, id, firstname, lastna
 	}()
 
 	var actor domain.Actor
-	if err := tx.Where("actor_id = ?", id).First(&actor).Error; err != nil {
+	if err := tx.Where("id = ?", id).First(&actor).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			tx.Rollback()
 			return errors.New("bu id'ye ait kullanıcı bulunmamaktadır")
@@ -241,7 +246,7 @@ func (h *PostgresHandler) UpdateActor(ctx context.Context, id, firstname, lastna
 	actor.FirstName = firstname
 	actor.LastName = lastname
 
-	if err := tx.Where("actor_id = ?", actor.ActorID).Updates(&actor).Error; err != nil {
+	if err := tx.Where("id = ?", actor.ID).Updates(&actor).Error; err != nil {
 		tx.Rollback()
 		zap.L().Error("güncelleme yapılamadı", zap.Error(err))
 		return errors.New("güncelleme yapılamadı")
