@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
+	"time"
 
 	"github.com/EmreZURNACI/apistack/domain"
 	_ "github.com/lib/pq"
+	"github.com/spf13/viper"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"gorm.io/driver/postgres"
@@ -16,40 +17,55 @@ import (
 )
 
 type PostgresHandler struct {
-	Db     *gorm.DB
-	Tracer trace.Tracer
+	db     *gorm.DB
+	tracer trace.Tracer
 }
 
 func GetPostgresHandler(tracer trace.Tracer) (*PostgresHandler, error) {
+	var dsn = fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+		viper.GetString("database.hostname"),
+		viper.GetString("database.port"),
+		viper.GetString("database.user"),
+		viper.GetString("database.password"),
+		viper.GetString("database.db"))
 
-	var dsn = fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s  sslmode=disable",
-		os.Getenv("HOST"), os.Getenv("PORT"),
-		os.Getenv("USER"), os.Getenv("PASSWORD"),
-		os.Getenv("DB"))
+	var db *gorm.DB
+	var err error
 
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	for i := range 5 {
+		db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
+		if err == nil {
+			sqlDB, pingErr := db.DB()
+			if pingErr == nil && sqlDB.Ping() == nil {
+				break
+			}
+		}
+		zap.L().Warn("Postgres bağlantısı kurulamadı, tekrar denenecek...",
+			zap.Int("attempt", i+1), zap.Error(err))
+		time.Sleep(3 * time.Second)
+	}
+
 	if err != nil {
-		zap.L().Error("failed to connect to gorm postgres database")
+		zap.L().Error("Postgres'e bağlanılamadı, tüm denemeler başarısız", zap.Error(err))
 		return nil, err
-
 	}
 
 	if err := db.Use(tracing.NewPlugin()); err != nil {
-		zap.L().Error("failed to tracing gorm postgres database")
+		zap.L().Error("gorm tracing plugin eklenemedi")
 		return nil, err
 	}
 
 	return &PostgresHandler{
-		Db:     db,
-		Tracer: tracer,
+		db:     db,
+		tracer: tracer,
 	}, nil
 }
 
 func (h *PostgresHandler) GetActors(ctx context.Context, search string, offset, limit int, orderBy bool) ([]domain.Actor, error) {
-	ctx, span := h.Tracer.Start(ctx, "GetActors")
+	ctx, span := h.tracer.Start(ctx, "GetActors")
 	defer span.End()
 
-	db := h.Db.WithContext(ctx).Table("actor")
+	db := h.db.WithContext(ctx).Table("actor")
 
 	if search != "" {
 		db = db.Where("first_name ILIKE ? OR last_name ILIKE ?", "%"+search+"%", "%"+search+"%")
@@ -82,10 +98,10 @@ func (h *PostgresHandler) GetActors(ctx context.Context, search string, offset, 
 }
 
 func (h *PostgresHandler) CreateActor(ctx context.Context, firstName, lastName string) (int64, error) {
-	ctx, span := h.Tracer.Start(ctx, "CreateActor")
+	ctx, span := h.tracer.Start(ctx, "CreateActor")
 	defer span.End()
 
-	tx := h.Db.WithContext(ctx).Table("actor").Begin()
+	tx := h.db.WithContext(ctx).Table("actor").Begin()
 	if tx.Error != nil {
 		zap.L().Error("failed to start transaction", zap.Error(tx.Error))
 		return 0, errors.New("transaction başlatılamadı")
@@ -131,10 +147,10 @@ func (h *PostgresHandler) CreateActor(ctx context.Context, firstName, lastName s
 }
 
 func (h *PostgresHandler) DeleteActor(ctx context.Context, id string) error {
-	ctx, span := h.Tracer.Start(ctx, "DeleteActor")
+	ctx, span := h.tracer.Start(ctx, "DeleteActor")
 	defer span.End()
 
-	tx := h.Db.WithContext(ctx).Table("actor").Begin()
+	tx := h.db.WithContext(ctx).Table("actor").Begin()
 	if tx.Error != nil {
 		zap.L().Error("transaction başlatılamadı", zap.Error(tx.Error))
 		return errors.New("transaction başlatılamadı")
@@ -172,11 +188,11 @@ func (h *PostgresHandler) DeleteActor(ctx context.Context, id string) error {
 }
 
 func (h *PostgresHandler) GetActor(ctx context.Context, id string) (*domain.Actor, error) {
-	ctx, span := h.Tracer.Start(ctx, "GetActor")
+	ctx, span := h.tracer.Start(ctx, "GetActor")
 	defer span.End()
 
 	var actor domain.Actor
-	err := h.Db.WithContext(ctx).Table("actor").Where("actor_id = ?", id).First(&actor).Error
+	err := h.db.WithContext(ctx).Table("actor").Where("actor_id = ?", id).First(&actor).Error
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		zap.L().Info("Bu id'li kullanıcı bulunmamaktadır", zap.String("id", id))
@@ -192,10 +208,10 @@ func (h *PostgresHandler) GetActor(ctx context.Context, id string) (*domain.Acto
 }
 
 func (h *PostgresHandler) UpdateActor(ctx context.Context, id, firstname, lastname string) error {
-	ctx, span := h.Tracer.Start(ctx, "UpdateActor")
+	ctx, span := h.tracer.Start(ctx, "UpdateActor")
 	defer span.End()
 
-	tx := h.Db.Table("actor").WithContext(ctx).Begin()
+	tx := h.db.Table("actor").WithContext(ctx).Begin()
 	if tx.Error != nil {
 		zap.L().Error("transaction başlatılamadı", zap.Error(tx.Error))
 		return errors.New("transaction başlatılamadı")
