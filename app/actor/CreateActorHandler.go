@@ -2,9 +2,6 @@ package actor
 
 import (
 	"context"
-
-	"github.com/EmreZURNACI/apistack/app"
-	"go.opentelemetry.io/otel/trace"
 )
 
 type CreateActorRequest struct {
@@ -16,23 +13,18 @@ type CreateActorResponse struct {
 	ID int64 `json:"id"`
 }
 type CreateActorHandler struct {
-	Repository app.Repository
-	Tracer     trace.Tracer
+	repository Repository
 }
 
-func NewCreateActorHandler(repository app.Repository, trace trace.Tracer) *CreateActorHandler {
+func NewCreateActorHandler(repository Repository) *CreateActorHandler {
 	return &CreateActorHandler{
-		Repository: repository,
-		Tracer:     trace,
+		repository: repository,
 	}
 }
 
 func (h *CreateActorHandler) Handle(ctx context.Context, req *CreateActorRequest) (*CreateActorResponse, error) {
 
-	ctx, span := h.Tracer.Start(ctx, "CreateActorHandle")
-	defer span.End()
-
-	id, err := h.Repository.CreateActor(ctx, req.FirstName, req.LastName)
+	id, err := h.repository.CreateActor(ctx, req.FirstName, req.LastName)
 	if err != nil {
 		return nil, err
 	}

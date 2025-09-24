@@ -3,10 +3,7 @@ package actor
 import (
 	"context"
 
-	"github.com/EmreZURNACI/apistack/app"
 	"github.com/EmreZURNACI/apistack/domain"
-
-	"go.opentelemetry.io/otel/trace"
 )
 
 type GetActorRequest struct {
@@ -17,23 +14,18 @@ type GetActorResponse struct {
 	Actor domain.Actor `json:"actor"`
 }
 type GetActorHandler struct {
-	Repository app.Repository
-	Tracer     trace.Tracer
+	repository Repository
 }
 
-func NewGetActorHandler(repository app.Repository, tracer trace.Tracer) *GetActorHandler {
+func NewGetActorHandler(repository Repository) *GetActorHandler {
 	return &GetActorHandler{
-		Repository: repository,
-		Tracer:     tracer,
+		repository: repository,
 	}
 }
 
 func (h *GetActorHandler) Handle(ctx context.Context, req *GetActorRequest) (*GetActorResponse, error) {
 
-	ctx, span := h.Tracer.Start(ctx, "GetActorHandle")
-	defer span.End()
-
-	actor, err := h.Repository.GetActor(ctx, req.ActorID)
+	actor, err := h.repository.GetActor(ctx, req.ActorID)
 	if err != nil {
 		return nil, err
 	}
