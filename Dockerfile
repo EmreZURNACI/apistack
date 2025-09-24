@@ -1,7 +1,7 @@
-FROM golang:tip-bullseye
+FROM golang
 
 LABEL author="emrez"
-LABEL version="1.0"
+LABEL version="1.1"
 
 RUN mkdir /app
 
@@ -11,16 +11,17 @@ COPY ./app ./app
 COPY ./domain ./domain
 COPY ./controller ./controller
 COPY ./infra ./infra
+COPY ./cache ./cache
 COPY ./server ./server
-COPY ./.env ./.env
+COPY ./.config ./.config
 COPY ./main.go ./main.go
 COPY ./go.mod ./go.mod
 COPY ./go.sum ./go.sum
 
-
-RUN go mod tidy
 RUN go mod download
 
-CMD ["go","run","main.go"]
+RUN CGO_ENABLED=0 GOOS=linux go build -o /uygulama
 
-EXPOSE 8080:8080
+CMD ["/uygulama"]
+
+EXPOSE 8080
