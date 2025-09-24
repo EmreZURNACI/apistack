@@ -1,8 +1,13 @@
 package actor
 
 import (
+	"encoding/json"
+	"fmt"
+	"time"
+
 	"github.com/EmreZURNACI/apistack/app/actor"
-	"github.com/EmreZURNACI/apistack/infra/postgresql"
+	"github.com/EmreZURNACI/apistack/cache/redis"
+	"github.com/EmreZURNACI/apistack/domain"
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
 	"go.opentelemetry.io/otel"
@@ -13,15 +18,8 @@ var tracer = otel.Tracer("stackapi")
 
 var validate = validator.New()
 
-type ActorController struct {
-	handler *postgresql.PostgresHandler // GetPostgresHandler’ın döndürdüğü tip neyse
-}
-
-func NewActorController(handler *postgresql.PostgresHandler) *ActorController {
-	return &ActorController{handler: handler}
-}
-
 func (h *ActorController) GetActors(c *fiber.Ctx) error {
+
 	type input struct {
 		Search  string `json:"search"`
 		Limit   int    `json:"limit"`
@@ -39,20 +37,56 @@ func (h *ActorController) GetActors(c *fiber.Ctx) error {
 	ctx, span := tracer.Start(c.UserContext(), "Actors")
 	defer span.End()
 
-	ActorsHandler := actor.NewGetActorsHandler(h.handler, tracer)
+	key := fmt.Sprintf("actors:search=%s", i.Search)
+
+	actors, err := h.cache.Get(ctx, key)
+
+	if err == nil {
+		var actorList []domain.Actor
+		if err := json.Unmarshal(actors, &actorList); err != nil {
+			return c.Status(400).JSON(fiber.Map{
+				"error": err.Error(),
+			})
+		}
+
+		return c.Status(200).JSON(fiber.Map{
+			"actors": actorList,
+		})
+	}
+
+	ActorsHandler := actor.NewGetActorsHandler(h.db)
 	res, err := ActorsHandler.Handle(ctx, &actor.GetActorsRequest{
 		Search:  i.Search,
 		Limit:   i.Limit,
 		Offset:  i.Offset,
 		OrderBy: i.OrderBy,
 	})
-
 	if err != nil {
-		zap.L().Error("Error getting actors", zap.Error(err))
-		return c.JSON(err.Error())
+		return c.Status(500).JSON(fiber.Map{
+			"error": err.Error(),
+		})
 	}
 
-	return c.JSON(res.Actors)
+	bs, err := json.Marshal(res.Actors)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+	err = h.cache.Set(ctx, redis.Message{
+		Key:      []byte(key),
+		Value:    bs,
+		Duration: time.Minute * 3,
+	})
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	return c.Status(200).JSON(fiber.Map{
+		"actors": res.Actors,
+	})
 }
 func (h *ActorController) GetActor(c *fiber.Ctx) error {
 	var id = c.Params("id")
@@ -70,7 +104,7 @@ func (h *ActorController) GetActor(c *fiber.Ctx) error {
 	ctx, span := tracer.Start(c.UserContext(), "Actor")
 	defer span.End()
 
-	ActorHandler := actor.NewGetActorHandler(h.handler, tracer)
+	ActorHandler := actor.NewGetActorHandler(h.db)
 	res, err := ActorHandler.Handle(ctx, &actor.GetActorRequest{
 		ActorID: i.ID,
 	})
@@ -103,7 +137,7 @@ func (h *ActorController) CreateActor(c *fiber.Ctx) error {
 	ctx, span := tracer.Start(c.UserContext(), "CreateActor")
 	defer span.End()
 
-	CreateActorHandler := actor.NewCreateActorHandler(h.handler, tracer)
+	CreateActorHandler := actor.NewCreateActorHandler(h.db)
 
 	res, err := CreateActorHandler.Handle(ctx, &actor.CreateActorRequest{
 		FirstName: i.FirstName,
@@ -141,7 +175,7 @@ func (h *ActorController) UpdateActor(c *fiber.Ctx) error {
 	ctx, span := tracer.Start(c.UserContext(), "UpdateActor")
 	defer span.End()
 
-	GetActorHandler := actor.NewGetActorHandler(h.handler, tracer)
+	GetActorHandler := actor.NewGetActorHandler(h.db)
 	_, err := GetActorHandler.Handle(ctx, &actor.GetActorRequest{
 		ActorID: i.ID,
 	})
@@ -151,7 +185,7 @@ func (h *ActorController) UpdateActor(c *fiber.Ctx) error {
 		return c.JSON(err.Error())
 	}
 
-	UpdateActorHandler := actor.NewUpdateActorHandler(h.handler, tracer)
+	UpdateActorHandler := actor.NewUpdateActorHandler(h.db)
 	res, err := UpdateActorHandler.Handle(ctx, &actor.UpdateActorRequest{
 		ID:        i.ID,
 		FirstName: i.FirstName,
@@ -181,7 +215,7 @@ func (h *ActorController) DeleteActor(c *fiber.Ctx) error {
 	ctx, span := tracer.Start(c.UserContext(), "DeleteActor")
 	defer span.End()
 
-	DeleteActorHandler := actor.NewDeleteActorHandler(h.handler, tracer)
+	DeleteActorHandler := actor.NewDeleteActorHandler(h.db)
 	res, err := DeleteActorHandler.Handle(ctx, &actor.DeleteActorRequest{
 		ID: i.ID,
 	})
