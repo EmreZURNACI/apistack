@@ -1,0 +1,16 @@
+database:
+  hostname: postgres
+  port: 5432
+  user: postgres
+  password: 123
+  db: dvdrental
+
+server:
+  port: 8080
+
+redis:
+  hostname: redis
+  port: 6379
+  password: emredis
+  user:
+  db: 0
